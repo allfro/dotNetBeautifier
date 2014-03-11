@@ -2,8 +2,17 @@ from burp import (IBurpExtender, IProxyListener, IInterceptedProxyMessage, IPara
                   IBurpExtenderCallbacks)
 from urllib import unquote, quote
 import shelve
-# import os
 import re
+
+__author__ = 'Nadeem Douba'
+__copyright__ = 'Copyright 2012, dotNetBeautifier  Project'
+__credits__ = []
+
+__license__ = 'GPL'
+__version__ = '0.1'
+__maintainer__ = 'Nadeem Douba'
+__email__ = 'ndouba@gmail.com'
+__status__ = 'Development'
 
 
 class ShelfProxyDict(object):
@@ -49,11 +58,8 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
     def registerExtenderCallbacks(self, callbacks):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
-        self._tracker = {} #ShelfProxyDict(os.path.join(os.path.expanduser('~'), '.dnb_tracker'), writeback=True)
-        self._counter = {} #ShelfProxyDict(os.path.join(os.path.expanduser('~'), '.dnb_counter'), writeback=True)
-        # self._headers = ShelfProxyDict(os.path.join(os.path.expanduser('~'), '.dnb_headers'), writeback=True)
-        # self._stdout = callbacks.getStdout()
-        # self._stderr = callbacks.getStderr()
+        self._tracker = {}
+        self._counter = {}
 
         callbacks.setExtensionName('.NET Beautifier')
         callbacks.registerProxyListener(self)
@@ -68,23 +74,11 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
     def processRequestMessage(self, message):
         messageReference = message.getMessageReference()
         if message.getMessageReference() not in self._tracker:
-
-            # self._stdout.write('modifying request %d\n' % messageReference)
-            # self._stdout.write('BEFORE MODIFICATION:\n')
-            # self._stdout.write(message.getMessageInfo().getRequest())
             self._simplifyParameters(messageReference, message.getMessageInfo())
-            # self._stdout.write('AFTER MODIFICATION:\n')
-            # self._stdout.write(message.getMessageInfo().getRequest())
             message.setInterceptAction(IInterceptedProxyMessage.ACTION_FOLLOW_RULES_AND_REHOOK)
         else:
-            # self._stdout.write('restoring request %d\n' % messageReference)
-            # self._stdout.write('BEFORE RESTORATION:\n')
-            # self._stdout.write(message.getMessageInfo().getRequest())
             self._restoreParameters(messageReference, message.getMessageInfo())
-            # self._stdout.write('AFTER RESTORATION:\n')
-            # self._stdout.write(message.getMessageInfo().getRequest())
             message.setInterceptAction(IInterceptedProxyMessage.ACTION_DONT_INTERCEPT)
-        self._syncShelves()
 
     def processResponseMessage(self, message):
         pass
@@ -170,15 +164,3 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
         results = self.headerRegex.search(self._helpers.bytesToString(requestBytes[:request.getBodyOffset()]))
         if results:
             self._restoreParameters(int(results.groups()[0]), messageInfo)
-
-    def _syncShelves(self):
-        return
-        # self._tracker.sync()
-        # self._counter.sync()
-        # self._headers.sync()
-
-    def __del__(self):
-        return
-        # self._tracker.close()
-        # self._counter.close()
-        # self._headers.close()
