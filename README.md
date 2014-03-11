@@ -36,7 +36,8 @@ Content-Type: application/x-www-form-urlencoded
 Content-Length: 1903
 X-dotNet-Beautifier: 259; DO-NOT-REMOVE
 
-__VIEWSTATE=<snipped out for sanity>&TxtUsername_internal=username&TxtPassword_internal=password&BtnLogin=Login```
+__VIEWSTATE=<snipped out for sanity>&TxtUsername_internal=username&TxtPassword_internal=password&BtnLogin=Login
+```
 
 All **without** compromising the integrity of the outgoing message so you can alter the values of the parameters you
 want to target *without losing your mind*! Better yet, you can send "beautified" messages to other tools within Burp and
