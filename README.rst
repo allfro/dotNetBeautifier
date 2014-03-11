@@ -8,7 +8,7 @@ your small screen at a client site? Don't you wish you could only focus on the m
 
 Well cry no more! This tool is about bringing awesome back to pentesting .NET apps. It makes requests like this:
 
-```
+```http
 POST /Default.aspx HTTP/1.1
 Host: annoying-web-app
 Referer: https://annoying-web-app/Default.aspx
@@ -26,7 +26,7 @@ ceHolder%24Element_42%24ctl00%24BtnLogin=Login
 
 Look like this:
 
-```
+```http
 POST /Default.aspx HTTP/1.1
 Host: annoying-web-app
 Referer: https://annoying-web-app/Default.aspx
