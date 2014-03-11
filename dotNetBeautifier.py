@@ -1,7 +1,6 @@
 from burp import (IBurpExtender, IProxyListener, IInterceptedProxyMessage, IParameter, IHttpListener,
                   IBurpExtenderCallbacks)
 from urllib import unquote, quote
-import shelve
 import re
 
 __author__ = 'Nadeem Douba'
@@ -13,43 +12,6 @@ __version__ = '0.1'
 __maintainer__ = 'Nadeem Douba'
 __email__ = 'ndouba@gmail.com'
 __status__ = 'Development'
-
-
-class ShelfProxyDict(object):
-    def __init__(self, filename, flag='c', protocol=None, writeback=False):
-        self._shelve = shelve.DbfilenameShelf(filename, flag, protocol, writeback)
-
-    def _stringifyKey(self, key):
-        if not isinstance(key, str):
-            return str(key)
-        return key
-
-    def __setitem__(self, key, value):
-        self._shelve[self._stringifyKey(key)] = value
-
-    def __getitem__(self, key):
-        return self._shelve[self._stringifyKey(key)]
-
-    def __delitem__(self, key):
-        del self._shelve[self._stringifyKey(key)]
-
-    def has_key(self, key):
-        return self._shelve.has_key(self._stringifyKey(key))
-
-    def __contains__(self, key):
-        return self._shelve.has_key(self._stringifyKey(key))
-
-    def __getattr__(self, item):
-        return getattr(self._shelve, item)
-
-    def __repr__(self):
-        return repr(self._shelve)
-
-    def __str__(self):
-        return str(self._shelve)
-
-    def __del__(self):
-        del self._shelve
 
 
 class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
