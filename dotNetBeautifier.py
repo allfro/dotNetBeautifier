@@ -1,6 +1,10 @@
 from burp import (IBurpExtender, IProxyListener, IInterceptedProxyMessage, IParameter, IHttpListener,
-                  IBurpExtenderCallbacks)
+                  IBurpExtenderCallbacks, IContextMenuFactory, IContextMenuInvocation)
+from javax.swing import JMenuItem
+from java.util import ArrayList
+
 from urllib import unquote, quote
+from urlparse import urlparse, urlunparse
 import re
 
 __author__ = 'Nadeem Douba'
@@ -14,18 +18,47 @@ __email__ = 'ndouba@gmail.com'
 __status__ = 'Development'
 
 
-class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
-    headerRegex = re.compile(r'X-dotNet-Beautifier:\s*(\d+);')
+class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFactory):
+
+    headerRegex = re.compile(r'X-dotNet-Beautifier:\s*(\d+(?:.\d+)?);')
 
     def registerExtenderCallbacks(self, callbacks):
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self._tracker = {}
         self._counter = {}
+        self._messageReference = float(0)
 
         callbacks.setExtensionName('.NET Beautifier')
         callbacks.registerProxyListener(self)
         callbacks.registerHttpListener(self)
+        callbacks.registerContextMenuFactory(self)
+
+    def createMenuItems(self, invocation):
+        if invocation.getToolFlag() not in [
+            IBurpExtenderCallbacks.TOOL_REPEATER, IBurpExtenderCallbacks.TOOL_PROXY,
+            IBurpExtenderCallbacks.TOOL_INTRUDER
+        ]:
+            return
+
+        if invocation.getInvocationContext() != IContextMenuInvocation.CONTEXT_MESSAGE_EDITOR_REQUEST:
+            return
+
+        menuItemList = ArrayList()
+        messageInfo = invocation.getSelectedMessages()[0]
+        requestBytes = messageInfo.getRequest()
+        requestInfo = self._helpers.analyzeRequest(requestBytes)
+        messageReference = self._getMessageReferenceFromBeautifyHeader(requestInfo, requestBytes)
+        if messageReference != -1:
+            def _unbeautifyClick(event):
+                self._restoreParameters(messageReference, messageInfo)
+            menuItemList.add(JMenuItem('Unbeautify Request', actionPerformed=_unbeautifyClick))
+        else:
+            self._messageReference += 1
+            def _beautifyClick(event):
+                self._simplifyParameters(self._messageReference, messageInfo)
+            menuItemList.add(JMenuItem('Beautify Request', actionPerformed=_beautifyClick))
+        return menuItemList
 
     def processProxyMessage(self, messageIsRequest, message):
         if messageIsRequest:
@@ -33,14 +66,14 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
         else:
             self.processResponseMessage(message)
 
-    def processRequestMessage(self, message):
-        messageReference = message.getMessageReference()
-        if message.getMessageReference() not in self._tracker:
-            self._simplifyParameters(messageReference, message.getMessageInfo())
-            message.setInterceptAction(IInterceptedProxyMessage.ACTION_FOLLOW_RULES_AND_REHOOK)
+    def processRequestMessage(self, interceptedMessage):
+        messageReference = interceptedMessage.getMessageReference()
+        if interceptedMessage.getMessageReference() not in self._tracker:
+            self._simplifyParameters(messageReference, interceptedMessage.getMessageInfo())
+            interceptedMessage.setInterceptAction(IInterceptedProxyMessage.ACTION_FOLLOW_RULES_AND_REHOOK)
         else:
-            self._restoreParameters(messageReference, message.getMessageInfo())
-            message.setInterceptAction(IInterceptedProxyMessage.ACTION_DONT_INTERCEPT)
+            self._restoreParameters(messageReference, interceptedMessage.getMessageInfo())
+            interceptedMessage.setInterceptAction(IInterceptedProxyMessage.ACTION_DONT_INTERCEPT)
 
     def processResponseMessage(self, message):
         pass
@@ -92,7 +125,7 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
     def _addBeautifyHeader(self, messageReference, requestBytes):
         requestInfo = self._helpers.analyzeRequest(requestBytes)
         headers = requestInfo.getHeaders()
-        headers.add('X-dotNet-Beautifier: %d; DO-NOT-REMOVE' % messageReference)
+        headers.add('X-dotNet-Beautifier: %s; DO-NOT-REMOVE' % messageReference)
         return self._helpers.buildHttpMessage(headers, requestBytes[requestInfo.getBodyOffset():])
 
     def _restoreParameters(self, messageReference, messageInfo):
@@ -116,13 +149,20 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener):
 
         messageInfo.setRequest(requestBytes)
 
+    def _getMessageReferenceFromBeautifyHeader(self, requestInfo, requestBytes):
+        results = self.headerRegex.search(self._helpers.bytesToString(requestBytes[:requestInfo.getBodyOffset()]))
+        if results:
+            value = results.groups()[0]
+            return float(value) if '.' in value else int(value)
+        return -1
+
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
         if not messageIsRequest or toolFlag == IBurpExtenderCallbacks.TOOL_PROXY:
             return
 
         requestBytes = messageInfo.getRequest()
-        request = self._helpers.analyzeRequest(requestBytes)
+        requestInfo = self._helpers.analyzeRequest(requestBytes)
 
-        results = self.headerRegex.search(self._helpers.bytesToString(requestBytes[:request.getBodyOffset()]))
-        if results:
-            self._restoreParameters(int(results.groups()[0]), messageInfo)
+        messageReference = self._getMessageReferenceFromBeautifyHeader(requestInfo, requestBytes)
+        if messageReference != -1:
+            self._restoreParameters(messageReference, messageInfo)
