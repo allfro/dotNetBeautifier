@@ -23,6 +23,9 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
     headerRegex = re.compile(r'X-dotNet-Beautifier:\s*(\d+(?:.\d+)?);')
 
     def registerExtenderCallbacks(self, callbacks):
+        """
+        Register our callbacks and create the necessary data structures for tracking messages.
+        """
         self._callbacks = callbacks
         self._helpers = callbacks.getHelpers()
         self._tracker = {}
@@ -35,6 +38,9 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         callbacks.registerContextMenuFactory(self)
 
     def createMenuItems(self, invocation):
+        """
+        Creates a context menu for beautifying and unbeautifying the request in editable message windows.
+        """
         if invocation.getToolFlag() not in [
             IBurpExtenderCallbacks.TOOL_REPEATER, IBurpExtenderCallbacks.TOOL_PROXY,
             IBurpExtenderCallbacks.TOOL_INTRUDER
@@ -61,12 +67,21 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         return menuItemList
 
     def processProxyMessage(self, messageIsRequest, message):
+        """
+        Beautifies and unbeautifies messages being intercepted by the Proxy tool.
+        """
         if messageIsRequest:
             self.processRequestMessage(message)
         else:
             self.processResponseMessage(message)
 
     def processRequestMessage(self, interceptedMessage):
+        """
+        Beautifies and unbeautifies messages being intercepted by the Proxy tool. The first time a message enters the
+        Proxy chain, it is beautified and marked for rehooking. After the message is beautified, the user is given the
+        opportunity to modify the HTTP message in the Burp Proxy tool. Once a message is forwarded, it is reprocessed
+        in this method, gets unbeautified, and forwarded to the web server.
+        """
         messageReference = interceptedMessage.getMessageReference()
         if interceptedMessage.getMessageReference() not in self._tracker:
             self._simplifyParameters(messageReference, interceptedMessage.getMessageInfo())
@@ -79,6 +94,12 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         pass
 
     def _simplifyParameters(self, messageReference, messageInfo):
+        """
+        Simplifies .NET parameter names that are extremely long containing dollar signs ('$'). First the parameter's
+        name is split using the dollar sign ('$') as a delimiter. The last element in the split string array is taken
+        and used as the simplified parameter name. If the simplified parameter name is already in use, an index will
+        be appended to the name as well (i.e. param[0], ..., param[n]) to avoid collisions.
+        """
         requestBytes = self._addBeautifyHeader(messageReference, messageInfo.getRequest())
         requestInfo = self._helpers.analyzeRequest(requestBytes)
 
@@ -119,15 +140,15 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
                 requestBytes = self._rewriteValue(parameter, value, requestBytes)
                 requestInfo = self._helpers.analyzeRequest(requestBytes)
             parameters = requestInfo.getParameters()
-            # simplifiedParameter = self._helpers.buildParameter(simplifiedParameterName, value, parameter.getType())
-            # requestBytes = self._helpers.removeParameter(requestBytes, parameter)
-            # requestBytes = self._helpers.addParameter(requestBytes, simplifiedParameter)
         messageInfo.setRequest(self._helpers.buildHttpMessage(
             requestInfo.getHeaders(),
             requestBytes[requestInfo.getBodyOffset():])
         )
 
     def _removeBeautifyHeader(self, requestBytes):
+        """
+        Removes the temporary X-dotNet-Beautifier HTTP header before the request is issued to the web server.
+        """
         requestInfo = self._helpers.analyzeRequest(requestBytes)
         headers = requestInfo.getHeaders()
         header = None
@@ -140,22 +161,38 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         return self._helpers.buildHttpMessage(headers, requestBytes[requestInfo.getBodyOffset():])
 
     def _rewriteName(self, p, newName, requestBytes):
+        """
+        Rewrites .NET parameter names.
+        """
         requestString = self._helpers.bytesToString(requestBytes)
         start, end = p.getNameStart(), p.getNameEnd()
         return self._helpers.stringToBytes('%s%s%s' % (requestString[:start], newName, requestString[end:]))
 
     def _rewriteValue(self, p, newValue, requestBytes):
+        """
+        Rewrites the value of the .NET __VIEWSTATE, __PREVIOUSPAGE, and __EVENTVALIDATION
+        parameters.
+        """
         requestString = self._helpers.bytesToString(requestBytes)
         start, end = p.getValueStart(), p.getValueEnd()
         return self._helpers.stringToBytes('%s%s%s' % (requestString[:start], newValue, requestString[end:]))
 
     def _addBeautifyHeader(self, messageReference, requestBytes):
+        """
+        Adds a temporary X-dotNet-Beautifier HTTP header. The header is used to retrieve the
+        original request parameter names when the beautified request is being restored. The header is removed once
+        a request is unbeautified.
+        """
         requestInfo = self._helpers.analyzeRequest(requestBytes)
         headers = requestInfo.getHeaders()
         headers.add('X-dotNet-Beautifier: %s; DO-NOT-REMOVE' % messageReference)
         return self._helpers.buildHttpMessage(headers, requestBytes[requestInfo.getBodyOffset():])
 
     def _restoreParameters(self, messageReference, messageInfo):
+        """
+        Unbeautifies the request by restoring the original .NET parameter names and values. Also removes the temporary
+        X-dotNet-Beautifier HTTP header.
+        """
         requestBytes = self._removeBeautifyHeader(messageInfo.getRequest())
         requestInfo = self._helpers.analyzeRequest(requestBytes)
         parameters = requestInfo.getParameters()
@@ -180,6 +217,9 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         )
 
     def _getMessageReferenceFromBeautifyHeader(self, requestInfo, requestBytes):
+        """
+        Parses the X-dotNet-Beautifier HTTP header to retrieve the message reference identifier.
+        """
         results = self.headerRegex.search(self._helpers.bytesToString(requestBytes[:requestInfo.getBodyOffset()]))
         if results:
             value = results.groups()[0]
@@ -187,6 +227,11 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         return -1
 
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
+        """
+        Used to unbeautify requests that are being issued by tools other than the Proxy tool in BurpSuite. For example,
+        a beautified request may be issued by the Intruder, Repeater, and Sequencer tabs. In those cases, the message
+        will be unbeautified prior to issuing the request to the web server.
+        """
         if not messageIsRequest or toolFlag == IBurpExtenderCallbacks.TOOL_PROXY:
             return
 
