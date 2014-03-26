@@ -1,18 +1,18 @@
+from urllib import unquote, quote
+import re
+
 from burp import (IBurpExtender, IProxyListener, IInterceptedProxyMessage, IParameter, IHttpListener,
                   IBurpExtenderCallbacks, IContextMenuFactory, IContextMenuInvocation)
 from javax.swing import JMenuItem
 from java.util import ArrayList
 
-from urllib import unquote, quote
-from urlparse import urlparse, urlunparse
-import re
 
 __author__ = 'Nadeem Douba'
-__copyright__ = 'Copyright 2012, dotNetBeautifier  Project'
+__copyright__ = 'Copyright 2012, dotNetBeautifier Project'
 __credits__ = []
 
 __license__ = 'GPL'
-__version__ = '0.1'
+__version__ = '0.2'
 __maintainer__ = 'Nadeem Douba'
 __email__ = 'ndouba@gmail.com'
 __status__ = 'Development'
@@ -82,33 +82,50 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
         requestBytes = self._addBeautifyHeader(messageReference, messageInfo.getRequest())
         requestInfo = self._helpers.analyzeRequest(requestBytes)
 
-        self._tracker[messageReference] = {}
+        if messageReference not in self._tracker:
+            self._tracker[messageReference] = {}
+            self._counter[messageReference] = {}
 
-        for parameter in requestInfo.getParameters():
+        parameters = requestInfo.getParameters()
+
+        for i in range(len(parameters)):
+            parameter = parameters.get(i)
+
             if parameter.getType() not in [IParameter.PARAM_BODY, IParameter.PARAM_URL,
                                            IParameter.PARAM_MULTIPART_ATTR]:
                 continue
             parameterName = parameter.getName()
-            value = '<snipped out for sanity>'
+            value = None
             if '$' in unquote(parameterName):
                 simplifiedParameterName = quote(unquote(parameterName).split('$')[-1])
-                value = parameter.getValue()
-            elif unquote(parameterName) in ['__VIEWSTATE', '__PREVIOUSPAGE', '__PREVIOUSPAGE', '__EVENTVALIDATION']:
+            elif unquote(parameterName) in ['__VIEWSTATE', '__PREVIOUSPAGE', '__EVENTVALIDATION']:
                 simplifiedParameterName = parameterName
+                value = '<snipped out for sanity>'
             else:
                 continue
             if simplifiedParameterName in self._tracker[messageReference]:
-                if not messageReference in self._counter:
+                if simplifiedParameterName not in self._counter[messageReference]:
                     self._counter[messageReference] = {simplifiedParameterName: 0}
+
                 self._counter[messageReference][simplifiedParameterName] += 1
                 simplifiedParameterName = '%s[%d]' % (
                     simplifiedParameterName, self._counter[messageReference][simplifiedParameterName])
             self._tracker[messageReference][simplifiedParameterName] = parameter
-            simplifiedParameter = self._helpers.buildParameter(simplifiedParameterName, value, parameter.getType())
-            requestBytes = self._helpers.removeParameter(requestBytes, parameter)
-            requestBytes = self._helpers.addParameter(requestBytes, simplifiedParameter)
 
-        messageInfo.setRequest(requestBytes)
+            if simplifiedParameterName != parameterName:
+                requestBytes = self._rewriteName(parameter, simplifiedParameterName, requestBytes)
+                requestInfo = self._helpers.analyzeRequest(requestBytes)
+            if value:
+                requestBytes = self._rewriteValue(parameter, value, requestBytes)
+                requestInfo = self._helpers.analyzeRequest(requestBytes)
+            parameters = requestInfo.getParameters()
+            # simplifiedParameter = self._helpers.buildParameter(simplifiedParameterName, value, parameter.getType())
+            # requestBytes = self._helpers.removeParameter(requestBytes, parameter)
+            # requestBytes = self._helpers.addParameter(requestBytes, simplifiedParameter)
+        messageInfo.setRequest(self._helpers.buildHttpMessage(
+            requestInfo.getHeaders(),
+            requestBytes[requestInfo.getBodyOffset():])
+        )
 
     def _removeBeautifyHeader(self, requestBytes):
         requestInfo = self._helpers.analyzeRequest(requestBytes)
@@ -122,6 +139,16 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
             headers.remove(header)
         return self._helpers.buildHttpMessage(headers, requestBytes[requestInfo.getBodyOffset():])
 
+    def _rewriteName(self, p, newName, requestBytes):
+        requestString = self._helpers.bytesToString(requestBytes)
+        start, end = p.getNameStart(), p.getNameEnd()
+        return self._helpers.stringToBytes('%s%s%s' % (requestString[:start], newName, requestString[end:]))
+
+    def _rewriteValue(self, p, newValue, requestBytes):
+        requestString = self._helpers.bytesToString(requestBytes)
+        start, end = p.getValueStart(), p.getValueEnd()
+        return self._helpers.stringToBytes('%s%s%s' % (requestString[:start], newValue, requestString[end:]))
+
     def _addBeautifyHeader(self, messageReference, requestBytes):
         requestInfo = self._helpers.analyzeRequest(requestBytes)
         headers = requestInfo.getHeaders()
@@ -131,23 +158,26 @@ class BurpExtender(IBurpExtender, IProxyListener, IHttpListener, IContextMenuFac
     def _restoreParameters(self, messageReference, messageInfo):
         requestBytes = self._removeBeautifyHeader(messageInfo.getRequest())
         requestInfo = self._helpers.analyzeRequest(requestBytes)
-
-        for simplifiedParameter in requestInfo.getParameters():
-            if simplifiedParameter.getType() not in [IParameter.PARAM_BODY, IParameter.PARAM_URL,
-                                                     IParameter.PARAM_MULTIPART_ATTR]:
+        parameters = requestInfo.getParameters()
+        for i in range(len(parameters)):
+            simplifiedParameter = parameters.get(i)
+            if simplifiedParameter.getType() not in [IParameter.PARAM_BODY, IParameter.PARAM_URL]:
                 continue
             simplifiedParameterName = simplifiedParameter.getName()
             if simplifiedParameterName in self._tracker[messageReference]:
                 originalParameter = self._tracker[messageReference][simplifiedParameterName]
-                if simplifiedParameterName not in ['__VIEWSTATE', '__PREVIOUSPAGE', '__PREVIOUSPAGE',
-                                                   '__EVENTVALIDATION']:
-                    originalParameter = self._helpers.buildParameter(originalParameter.getName(),
-                                                                     simplifiedParameter.getValue(),
-                                                                     simplifiedParameter.getType())
-                requestBytes = self._helpers.removeParameter(requestBytes, simplifiedParameter)
-                requestBytes = self._helpers.addParameter(requestBytes, originalParameter)
 
-        messageInfo.setRequest(requestBytes)
+                if simplifiedParameterName in ['__VIEWSTATE', '__PREVIOUSPAGE', '__EVENTVALIDATION']:
+                    requestBytes = self._rewriteValue(simplifiedParameter, originalParameter.getValue(), requestBytes)
+                    requestInfo = self._helpers.analyzeRequest(requestBytes)
+                else:
+                    requestBytes = self._rewriteName(simplifiedParameter, originalParameter.getName(), requestBytes)
+                    requestInfo = self._helpers.analyzeRequest(requestBytes)
+                parameters = requestInfo.getParameters()
+        messageInfo.setRequest(self._helpers.buildHttpMessage(
+            requestInfo.getHeaders(),
+            requestBytes[requestInfo.getBodyOffset():])
+        )
 
     def _getMessageReferenceFromBeautifyHeader(self, requestInfo, requestBytes):
         results = self.headerRegex.search(self._helpers.bytesToString(requestBytes[:requestInfo.getBodyOffset()]))
