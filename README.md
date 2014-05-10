@@ -3,8 +3,8 @@ About
 
 Have you ever pen-tested a .NET app and found that it has all sorts of ugly parameter names
 (i.e. ctl0$blah$foo$VeryLongLine)? Sometimes these parameters can be pages long (i.e. __VIEWSTATE). Have you felt
-like killing yourself because you can't even read the whole parameter name and see what it's corresponding value is in
-your small screen at a client site? Don't you wish you could only focus on the meat of the request?
+like tearing your hair out because you can't even read the whole parameter name and see what it's corresponding value 
+is in your small screen at a client site? Don't you wish you could only focus on the meat of the request?
 
 Well cry no more! This tool is about bringing awesome back to pentesting .NET apps. It makes requests like this:
 
