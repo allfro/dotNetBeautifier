@@ -6,7 +6,7 @@ Have you ever pen-tested a .NET app and found that it has all sorts of ugly para
 like tearing your hair out because you can't even read the whole parameter name and see what it's corresponding value 
 is in your small screen at a client site? Don't you wish you could only focus on the meat of the request?
 
-Well cry no more! This tool is about bringing awesome back to pentesting .NET apps. It makes requests like this:
+Well cry no more! This tool is about bringing awesome back to pen-testing .NET apps. It makes requests like this:
 
 ```
 POST /Default.aspx HTTP/1.1
@@ -50,7 +50,6 @@ Requirements
 ------------
 
 You'll need the following to get started:
-- the standalone version of Jython available at http://www.jython.org/downloads.html.
 - the latest version of BurpSuite versions 1.6 or later.
 - a positive attitude!
 
